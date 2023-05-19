@@ -10,7 +10,7 @@ import datetime
 class IntelliStatError(Exception):
     pass
 
-class IntelliStat():
+class StatsPack():
     '''
     Intelligent Statistical Calculation Package intended to guide people through A/B testing
 
@@ -119,18 +119,31 @@ class IntelliStat():
 
     # t-Student test for the linear relationship of two columns
 
-    def shapiro_wilk_test(self):
+    def shapiro_wilk_test(self,data):
         '''
 
         :return:
         '''
-        pass
+
+        statistic, p_value = stats.shapiro(data)
+
+        return statistic, p_value
+
+    def levenes_test(self):
+        '''
+
+        :return:
+        '''
+        statistic, p_value = stats.levene()
+
+        return statistic, p_value
+
 
     ##########################################################################
     #                               T-Tests                                  #
     ##########################################################################
 
-    def one_sample_ttest(self):
+    def one_sample_ttest(self,x,popmean):
         '''
         Purpose: To determine if the mean of a single population differs from a
         specified value (population mean).
@@ -141,9 +154,18 @@ class IntelliStat():
         Wilcoxon Signed-Rank Test
         :return:
         '''
-        pass
 
-    def two_sample_ttest(self):
+        # Assuming you have data in a numpy array named "data"
+        data = np.array(x)
+
+        t_statistic, p_value = stats.ttest_1samp(data, popmean)
+
+        return t_statistic, p_value
+
+
+
+
+    def two_sample_ttest(self,x,y):
         '''
         Purpose: To compare the means of two independent groups.
 
@@ -156,9 +178,19 @@ class IntelliStat():
         Mann-Whitney U Test (for non-normal data)
         Welch’s T-test (for unequal variances)
         '''
-        pass
 
-    def paired_ttest(self):
+        # Assuming you have two sets of data in numpy arrays
+        data1 = np.array(x)
+        data2 = np.array(y)
+
+        t_statistic, p_value = stats.ttest_ind(data1, data2)
+
+
+        return t_statistic, p_value
+
+
+
+    def paired_ttest(self,x,y):
         '''
         Purpose: To compare the means of the same group at two
         different times (e.g., pre- and post-test).
@@ -171,7 +203,18 @@ class IntelliStat():
         Wilcoxon Signed-Rank Test
         :return:
         '''
-        pass
+        # Assuming you have two related sets of data in numpy arrays
+        data1 = np.array(x)  # replace with your first set of data
+        data2 = np.array(y)  # replace with your second set of data
+
+        t_statistic, p_value = stats.ttest_rel(data1, data2)
+
+        return t_statistic, p_value
+
+
+
+
+
 
 
     ##########################################################################
@@ -227,7 +270,13 @@ class IntelliStat():
         Fisher's Exact Test (if cell counts are too small)
         :return:
         '''
-        pass
+        contingency_table = np.array([
+            [...],  # replace with your first row of data
+            [...]  # replace with your second row of data
+        ])
+        chi2, p_value, dof, expected = stats.chi2_contingency(contingency_table)
+
+        return chi2, p_value, dof, expected
 
     def chi_square_goodness_of_fit(self):
         '''
