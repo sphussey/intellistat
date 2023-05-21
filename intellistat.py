@@ -6,6 +6,9 @@ from scipy import stats
 import csv
 import os
 import datetime
+from statsmethods import StatsMethods as stm
+
+
 
 class IntelliStatError(Exception):
     pass
@@ -13,8 +16,8 @@ class IntelliStatError(Exception):
 
 class IntelliStat():
     '''
-    Intelligent Statistical Calculation Package intended to guide people through A/B testing
-
+    Intelligent Statistical Calculation Package intended to guide people
+    through A/B testing
     '''
 
     def __init__(self, data):

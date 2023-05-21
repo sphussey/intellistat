@@ -58,6 +58,31 @@ class StatsMethods():
 
         return statistic, p_value
 
+        # Outlier Detection and Removal
+        # Enables IQR method
+
+    def outlier_removal_IQR_method(self, save=True, filename="intelliprocess_outliers_iqr_file"):
+        """
+        Removes outliers based on inter quartile range
+        and provides a csv file output.
+        :return: updated_data: a new csv file with outlier
+        observations removed.
+        """
+        data_numeric = self.data.copy()
+        Q3 = data_numeric.quantile(0.75)
+        Q1 = data_numeric.quantile(0.25)
+        IQR = (Q3 - Q1)
+
+        updated_data = data_numeric[~(
+                (data_numeric < (Q1 - 1.5 * IQR)) | (data_numeric > (Q3 + 1.5 * IQR)))]
+
+        if save is True:
+            timestamp = str(datetime.datetime.now()).replace(" ", "")
+            filename = filename + "" + timestamp + ".csv "
+            updated_data.to_csv(filename)
+
+        # potentially add option to save
+        return updated_data
     ##########################################################################
     #                               T-Tests                                  #
     ##########################################################################
