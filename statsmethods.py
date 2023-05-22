@@ -16,8 +16,8 @@ class StatsMethodsError(Exception):
 
 class StatsMethods():
     '''
-    Statistical package built on scipy and statsmodels methods with added checks to improve comprehension
-    for users.
+    Statistical package built on scipy and statsmodels methods with added checks to improve
+    comprehension for users.
     '''
 
     @staticmethod
@@ -554,7 +554,7 @@ class StatsMethods():
 
         final_df = pd.DataFrame(corr_matrix, dtype="float64")
         return final_df
-    
+
     def coefficient_of_determination(self, x, y):
         '''
         This functions calculates the coefficient of determination (R²)
@@ -657,7 +657,13 @@ class StatsMethods():
         '''
         Purpose: To assess the relationship between a dependent variable and several
         independent variables.
-
+        Like in the simple linear regression, the Breusch-Pagan test is used to assess
+        homoscedasticity, the Shapiro-Wilk test is used to assess normality of residuals,
+        and the Durbin-Watson statistic is used to detect the presence of autocorrelation
+        in the residuals. If the p-values for the homoscedasticity and normality tests
+        are less than a significance level (say 0.05), the respective assumptions may
+        be violated. The Durbin-Watson statistic is approximately equal to 2 for no
+        autocorrelation.
         Assumptions: Same as simple linear regression
 
         Alternatives if assumptions aren't met:
