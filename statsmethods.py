@@ -3,60 +3,100 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 from scipy import stats
-import csv
+from statsmodels.formula.api import ols
+from statsmodels.stats.diagnostic import het_breuschpagan
+from statsmodels.stats.stattools import durbin_watson
+from scipy.stats import shapiro
+import statsmodels.api as sm
 import os
 import datetime
 
+class StatsMethodsError(Exception):
+    pass
 
 class StatsMethods():
     '''
-
+    Statistical package built on scipy and statsmodels methods with added checks to improve comprehension
+    for users.
     '''
 
-    '''
-    Parametric Statistical tests
-    1. Population is well-known
-    2. Assumptions made about the population
-    3. Sample data based on distribution
-    4. Applicable for continuous variables
-    5. More powerful
+    @staticmethod
+    def is_continuous_array(array):
+        '''
+        Heuristically determines if data in a numpy array is continuous.
+        :param array: 1D np.array object.
+        :return: boolean indicating whether the array is likely to be continuous.
+        '''
+
+        if not isinstance(array, np.ndarray) or array.ndim != 1:
+            raise StatsMethodsError("Please provide a 1D np.array object.")
+
+        if np.isnan(array).any():
+            raise StatsMethodsError("The provided array contains NaN values.")
+
+            # Check data type
+        if array.dtype in (np.int, np.int64):
+            # If it's integer data and the range of unique values is less than 5% of
+            # the total number of observations, it's likely categorical
+            if len(np.unique(array)) / len(array) < 0.05:
+                return False
+
+            # If the data is float and the range of unique values is more than 5% of
+            # the total number of observations, it's likely continuous
+        elif array.dtype in (np.float, np.float64):
+            if len(np.unique(array)) / len(array) > 0.05:
+                return True
+
+            # Otherwise, it's unclear whether the data is continuous
+        return 'Unclear'
 
 
-    a. Parametric statistics are more powerful for the same sample size than 
-    nonparametric statistics.
-    b. Parametric statistics use continuous variables, whereas nonparametric 
-    statistics often use discrete variables.
-    c. If you use parametric statistics when the data strongly diverts from 
-    the assumptions on which the parametric statistics are based, the result 
-    might lead to incorrect conclusions.
-
-    https://www.ibm.com/docs/en/db2woc?topic=functions-parametric-statistics
-    '''
-
-    # Pearson's chi-square
-    # https://www.ibm.com/docs/en/db2woc?topic=statistics-idaxchisq-test-agg-pearsons-chi-square
-
-    # t-Student test for the linear relationship of two columns
     @staticmethod
     def shapiro_wilk_test(array):
         '''
 
+        :param array: np.array object c
         :return:
         '''
 
-        statistic, p_value = stats.shapiro(array)
+        # The Shapiro-Wilk test requires at least 3 data points. If your array has fewer
+        # than 3 elements, scipy.stats.shapiro will raise an error.
+        if isinstance(array, np.ndarray) and array.ndim == 1:
+            if array.size < 3:
+                raise StatsMethodsError("StatsMethods.shapiro_wilk_test(): Please provide a 1D np.array object with at least 3 elements.")
+            # The Shapiro-Wilk test cannot handle NaN values, so it would be a good idea to
+            # check for this as well.
+            if np.isnan(array).any():
+                raise StatsMethodsError("StatsMethods.shapiro_wilk_test(): The provided np.array object contains NaN values.")
+            # make sure the array is not empty
+            if array.size == 0:
+                raise StatsMethodsError("Please provide a non-empty 1D np.array object.")
 
-        return statistic, p_value
+            statistic, p_value = stats.shapiro(array)
+            return statistic, p_value
+        else:
+            raise StatsMethodsError("StatsMethods.shapiro_wilk_test(): Please provide a 1D np.array object")
 
     @staticmethod
-    def levenes_test(array):
+    def levenes_test(*arrays):
         '''
+        Levene's test for equal variances.
 
-        :return:
+        :param arrays: One or more 1D numpy arrays.
+        :return: The test statistic and the p-value
         '''
-        statistic, p_value = stats.levene(array)
+        for i, array in enumerate(arrays, 1):
+            if not isinstance(array, np.ndarray) or array.ndim != 1:
+                raise StatsMethodsError(f"StatsMethods.lavenes_test(): Input {i} is not a 1D np.array object.")
+            if array.size < 2:
+                raise StatsMethodsError(f"StatsMethods.lavenes_test(): Input {i} has less than 2 elements.")
+            if np.isnan(array).any():
+                raise StatsMethodsError(f"StatsMethods.lavenes_test(): Input {i} contains NaN values.")
 
+        statistic, p_value = stats.levene(*arrays)
         return statistic, p_value
+
+
 
         # Outlier Detection and Removal
         # Enables IQR method
@@ -83,6 +123,9 @@ class StatsMethods():
 
         # potentially add option to save
         return updated_data
+
+
+
     ##########################################################################
     #                               T-Tests                                  #
     ##########################################################################
@@ -101,34 +144,66 @@ class StatsMethods():
         :return p_value: float
         '''
 
-        # Assuming you have data in a numpy array named "data"
-        data = np.array(x)
+        if not isinstance(x, np.ndarray) or x.ndim != 1:
+            raise StatsMethodsError("Please provide a 1D np.array object.")
+        if x.size < 2:
+            raise StatsMethodsError("The provided array should contain at least 2 elements.")
+        if np.isnan(x).any():
+            raise StatsMethodsError("The provided array contains NaN values.")
+        if not isinstance(popmean, (int, float)):
+            raise StatsMethodsError("The provided population mean is not a number.")
 
-        t_statistic, p_value = stats.ttest_1samp(data, popmean)
+        # Check for normality
+        _, p = StatsMethods.shapiro_wilk_test(x)
+        if p < 0.05:
+            print("Data may not be normally distributed. Consider using Wilcoxon Signed-Rank Test.")
+
+        # Check if data is continuous
+        if x.dtype in (np.int, np.int64) and len(np.unique(x)) / len(x) < 0.05:
+            print("Data may not be continuous. A t-test may not be appropriate.")
+
+        t_statistic, p_value = stats.ttest_1samp(x, popmean)
 
         return t_statistic, p_value
 
     @staticmethod
-    def wilcoxon_signed_rank_test(x=None, y=None):
+    def wilcoxon_signed_rank_test(x=None, y=None, paired=True):
         '''
         This is an alternative to the one-sample or paired T-test when the data
         does not meet the assumption of normality.
-        :param x:
-        :param y:
-        :return:
+        :param x: np.array
+        :param y: np.array or None
+        :param paired: boolean indicating whether x and y are paired
+        :return: test statistic, p-value
         '''
-        data1 = np.array(x)
-        data2 = np.array(y)
+
+        if not isinstance(x, np.ndarray) or x.ndim != 1:
+            raise StatsMethodsError("x should be a 1D np.array.")
+        if x.size < 2:
+            raise StatsMethodsError("x should contain at least 2 elements.")
+        if np.isnan(x).any():
+            raise StatsMethodsError("x contains NaN values.")
 
         # For one-sample test
         if y is None:
-            pop_mean = np.mean(data1)
-            statistic, p_value = stats.wilcoxon(data1 - pop_mean)
+            pop_median = np.median(x)
+            statistic, p_value = stats.wilcoxon(x - pop_median)
             return statistic, p_value
 
         # For paired test
         elif y is not None:
-            statistic, p_value = stats.wilcoxon(data1, data2)
+            if not isinstance(y, np.ndarray) or y.ndim != 1:
+                raise StatsMethodsError("y should be a 1D np.array when provided.")
+            if y.size != x.size:
+                raise StatsMethodsError("x and y should have the same length.")
+            if np.isnan(y).any():
+                raise StatsMethodsError("y contains NaN values.")
+
+            if paired:
+                statistic, p_value = stats.wilcoxon(x, y)
+            else:
+                statistic, p_value = stats.mannwhitneyu(x, y, alternative='two-sided')
+
             return statistic, p_value
 
     @staticmethod
@@ -146,25 +221,65 @@ class StatsMethods():
         Welch’s T-test (for unequal variances)
         '''
 
-        # Assuming you have two sets of data in numpy arrays
-        data1 = np.array(x)
-        data2 = np.array(y)
+        if not isinstance(x, np.ndarray) or x.ndim != 1:
+            raise StatsMethodsError("x should be a 1D np.array.")
+        if not isinstance(y, np.ndarray) or y.ndim != 1:
+            raise StatsMethodsError("y should be a 1D np.array.")
+        if x.size < 2 or y.size < 2:
+            raise StatsMethodsError("Both x and y should contain at least 2 elements.")
+        if np.isnan(x).any() or np.isnan(y).any():
+            raise StatsMethodsError("Neither x nor y should contain NaN values.")
+        if x.dtype.kind in 'i' and len(np.unique(x)) / len(x) < 0.05:
+            print("x may not be continuous. Consider using a nonparametric test.")
+        if y.dtype.kind in 'i' and len(np.unique(y)) / len(y) < 0.05:
+            print("y may not be continuous. Consider using a nonparametric test.")
 
-        t_statistic, p_value = stats.ttest_ind(data1, data2)
+        # Check for normality
+        _, p_x = stats.shapiro(x)
+        _, p_y = stats.shapiro(y)
+        if p_x < 0.05:
+            print("x may not be normally distributed. Consider using a nonparametric test.")
+        if p_y < 0.05:
+            print("y may not be normally distributed. Consider using a nonparametric test.")
+
+        # Check for equal variances
+        _, p_levene = stats.levene(x, y)
+        if p_levene < 0.05:
+            print("Variances may not be equal. Consider using Welch's t-test.")
+
+        t_statistic, p_value = stats.ttest_ind(x, y)
 
         return t_statistic, p_value
 
     @staticmethod
-    def mann_whitney_u_test(self, x, y):
+    def mann_whitney_u_test(x, y):
         '''
         This is an alternative to the independent two-sample T-test when the
         data does not meet the assumption of normality.
-        :param x:
-        :param y:
-        :return:
+        NOTE: This test should be used if the distributions of the two samples are not assumed
+        to be normal, but should have the same shape.
+
+        :param x: np.array
+        :param y: np.array
+        :return: u_statistic: float, p_value: float
         '''
-        data1 = np.array(x)
-        data2 = np.array(y)
+
+        if not isinstance(x, np.ndarray) or x.ndim != 1:
+            raise StatsMethodsError("x should be a 1D np.array.")
+        if not isinstance(y, np.ndarray) or y.ndim != 1:
+            raise StatsMethodsError("y should be a 1D np.array.")
+        if x.size < 2 or y.size < 2:
+            raise StatsMethodsError("Both x and y should contain at least 2 elements.")
+        if np.isnan(x).any() or np.isnan(y).any():
+            raise StatsMethodsError("Neither x nor y should contain NaN values.")
+        if np.isinf(x).any() or np.isinf(y).any():
+            raise StatsMethodsError("Neither x nor y should contain infinite values.")
+        if len(np.unique(x)) == 1 or len(np.unique(y)) == 1:
+            raise StatsMethodsError("Both x and y should contain more than one unique value.")
+
+        u_statistic, p_value = stats.mannwhitneyu(x, y, alternative='two-sided')
+
+        return u_statistic, p_value
 
     @staticmethod
     def paired_ttest(x, y):
@@ -180,11 +295,31 @@ class StatsMethods():
         Wilcoxon Signed-Rank Test
         :return:
         '''
-        # Assuming you have two related sets of data in numpy arrays
-        data1 = np.array(x)  # replace with your first set of data
-        data2 = np.array(y)  # replace with your second set of data
 
-        t_statistic, p_value = stats.ttest_rel(data1, data2)
+        # Check if inputs are numpy arrays and 1-dimensional
+        if not isinstance(x, np.ndarray) or x.ndim != 1:
+            raise StatsMethodsError("x should be a 1D np.array.")
+        if not isinstance(y, np.ndarray) or y.ndim != 1:
+            raise StatsMethodsError("y should be a 1D np.array.")
+
+        # Check if arrays are of the same size
+        if x.size != y.size:
+            raise StatsMethodsError("x and y should be of the same size.")
+
+        # Check if arrays contain at least 2 elements
+        if x.size < 2 or y.size < 2:
+            raise StatsMethodsError("Both x and y should contain at least 2 elements.")
+
+        # Check if arrays don't contain NaN or Inf values
+        if np.isnan(x).any() or np.isnan(y).any() or np.isinf(x).any() or np.isinf(y).any():
+            raise StatsMethodsError("Neither x nor y should contain NaN or infinite values.")
+
+        # Check if arrays have more than one unique value
+        if len(np.unique(x)) == 1 or len(np.unique(y)) == 1:
+            raise StatsMethodsError("Both x and y should contain more than one unique value.")
+
+        # Calculate the t-statistic and p-value for paired t-test
+        t_statistic, p_value = stats.ttest_rel(x, y)
 
         return t_statistic, p_value
 
@@ -192,7 +327,8 @@ class StatsMethods():
     #                     Analysis of Variance (ANOVA)                       #
     ##########################################################################
 
-    def one_way_anova(self):
+    @staticmethod
+    def one_way_anova(*arrays):
         '''
         Purpose: To compare the means of three or more independent groups.
 
@@ -205,9 +341,35 @@ class StatsMethods():
         Kruskal-Wallis Test
         :return:
         '''
-        pass
 
-    def two_way_anova(self):
+        # Check if at least 3 arrays are provided
+        if len(arrays) < 3:
+            raise StatsMethodsError("At least three arrays are needed for one-way ANOVA.")
+
+        for array in arrays:
+            # Check if input is numpy arrays and 1-dimensional
+            if not isinstance(array, np.ndarray) or array.ndim != 1:
+                raise StatsMethodsError("Each input should be a 1D np.array.")
+
+            # Check if arrays contain at least 2 elements
+            if array.size < 2:
+                raise StatsMethodsError("Each array should contain at least 2 elements.")
+
+            # Check if arrays don't contain NaN or Inf values
+            if np.isnan(array).any() or np.isinf(array).any():
+                raise StatsMethodsError("The arrays should not contain NaN or infinite values.")
+
+            # Check if arrays have more than one unique value
+            if len(np.unique(array)) == 1:
+                raise StatsMethodsError("Each array should contain more than one unique value.")
+
+        # Compute the one-way ANOVA F-value and p-value
+        f_value, p_value = stats.f_oneway(*arrays)
+
+        return f_value, p_value
+
+    @staticmethod
+    def two_way_anova(df, dep_var, ind_var1, ind_var2):
         '''
         Purpose: To assess the effect of two independent variables on a dependent
         variable.
@@ -221,18 +383,42 @@ class StatsMethods():
         Use a non-parametric equivalent or data transformation
         :return:
         '''
-        pass
+
+        # Check if input is a DataFrame
+        if not isinstance(df, pd.DataFrame):
+            raise StatsMethodsError("Input should be a pandas DataFrame.")
+
+        # Check if provided columns exist in the DataFrame
+        for col in [dep_var, ind_var1, ind_var2]:
+            if col not in df.columns:
+                raise StatsMethodsError(f"{col} not found in the DataFrame.")
+
+        # Check if there is enough data
+        if len(df) < 3:
+            raise StatsMethodsError("Dataframe should contain at least 3 rows.")
+
+        # Formulate the model
+        model = ols(f'{dep_var} ~ C({ind_var1}) + C({ind_var2}) + C({ind_var1}):C({ind_var2})', data=df).fit()
+
+        # Perform the two-way ANOVA
+        anova_table = sm.stats.anova_lm(model, typ=2)
+
+        return anova_table
 
     ##########################################################################
     #                           Chi-Square Tests                             #
     ##########################################################################
-
-    def chi_square_test_of_independence(self):
+    @staticmethod
+    def chi_square_test_of_independence(contingency_table):
         '''
         Purpose:
         To determine if there's a significant association between two categorical
         variables.
-
+        This function checks that the input is a 2D numpy array, that the contingency
+        table has at least 2 rows and 2 columns, and that the table contains only
+        non-negative integers. After performing the Chi-Square test, it also checks
+        if all cells have an expected count greater than 5, which is one of the
+        assumptions of the test. If not, a warning is printed.
         Assumptions:
         All cells have an expected count greater than 5
         Observations are independent
@@ -241,15 +427,33 @@ class StatsMethods():
         Fisher's Exact Test (if cell counts are too small)
         :return:
         '''
-        contingency_table = np.array([
-            [...],  # replace with your first row of data
-            [...]  # replace with your second row of data
-        ])
+        # Check if input is a numpy array
+        if not isinstance(contingency_table, np.ndarray):
+            raise StatsMethodsError("Input should be a np.array.")
+
+        # Check if array is 2-dimensional
+        if contingency_table.ndim != 2:
+            raise StatsMethodsError("Input array should be 2-dimensional.")
+
+        # Check if the table size is appropriate
+        if contingency_table.shape[0] < 2 or contingency_table.shape[1] < 2:
+            raise StatsMethodsError("Contingency table should have at least 2 rows and 2 columns.")
+
+        # Check if table values are non-negative integers
+        if not np.issubdtype(contingency_table.dtype, np.integer) or (contingency_table < 0).any():
+            raise StatsMethodsError("Contingency table should only contain non-negative integers.")
+
         chi2, p_value, dof, expected = stats.chi2_contingency(contingency_table)
+
+        # Check if all cells have an expected count greater than 5
+        if (expected < 5).any():
+            print("Warning: Some cells have an expected count less than 5.")
 
         return chi2, p_value, dof, expected
 
-    def chi_square_goodness_of_fit(self):
+
+    @staticmethod
+    def chi_square_goodness_of_fit(observed_values, expected_values):
         '''
         Purpose: To determine if an observed frequency distribution differs from a
         theoretical distribution.
@@ -260,9 +464,34 @@ class StatsMethods():
 
         Alternatives if assumptions aren't met:
         Use a non-parametric equivalent or data transformation
-        :return:
+
+        :return: chi2: float, p_value: float
         '''
-        pass
+        # Check if inputs are numpy arrays
+        if not isinstance(observed_values, np.ndarray) or not isinstance(expected_values, np.ndarray):
+            raise StatsMethodsError("Inputs should be np.array.")
+
+        # Check if arrays are 1-dimensional
+        if observed_values.ndim != 1 or expected_values.ndim != 1:
+            raise StatsMethodsError("Input arrays should be 1-dimensional.")
+
+        # Check if the array sizes match
+        if observed_values.size != expected_values.size:
+            raise StatsMethodsError("Observed and expected arrays should be the same size.")
+
+        # Check if array values are non-negative integers
+        if not np.issubdtype(observed_values.dtype, np.integer) or (observed_values < 0).any():
+            raise StatsMethodsError("Observed values should only contain non-negative integers.")
+        if not np.issubdtype(expected_values.dtype, np.integer) or (expected_values < 0).any():
+            raise StatsMethodsError("Expected values should only contain non-negative integers.")
+
+        chi2, p_value = stats.chisquare(f_obs=observed_values, f_exp=expected_values)
+
+        # Check if all cells have an expected count greater than 5
+        if (expected_values < 5).any():
+            print("Warning: Some cells have an expected count less than 5.")
+
+        return chi2, p_value
 
     ##########################################################################
     #                           Correlation Tests                            #
@@ -325,7 +554,7 @@ class StatsMethods():
 
         final_df = pd.DataFrame(corr_matrix, dtype="float64")
         return final_df
-
+    
     def coefficient_of_determination(self, x, y):
         '''
         This functions calculates the coefficient of determination (R²)
@@ -339,7 +568,8 @@ class StatsMethods():
         r_squared = r ** 2
         return r_squared
 
-    def spearman_rank_correlation(self):
+    @staticmethod
+    def spearman_rank_correlation(x, y):
         '''
         Purpose: To measure the monotonic relationship between two variables.
 
@@ -347,15 +577,34 @@ class StatsMethods():
         Variables are ordinal, interval, or ratio
         No outliers
 
-        :return:
+        :return: correlation_coefficient: float, p_value: float
         '''
-        pass
+        # Check if inputs are numpy arrays
+        if not isinstance(x, np.ndarray) or not isinstance(y, np.ndarray):
+            raise StatsMethodsError("Inputs should be np.array.")
+
+        # Check if arrays are 1-dimensional
+        if x.ndim != 1 or y.ndim != 1:
+            raise StatsMethodsError("Input arrays should be 1-dimensional.")
+
+        # Check if array sizes match
+        if x.size != y.size:
+            raise StatsMethodsError("x and y arrays should be the same size.")
+
+        # Check if arrays contain NaN values
+        if np.isnan(x).any() or np.isnan(y).any():
+            raise StatsMethodsError("Neither x nor y should contain NaN values.")
+
+        correlation_coefficient, p_value = stats.spearmanr(x, y)
+
+        return correlation_coefficient, p_value
 
     ##########################################################################
     #                           Regression Analysis                          #
     ##########################################################################
 
-    def simple_linear_regression(self):
+    @staticmethod
+    def simple_linear_regression(x, y):
         '''
         Purpose: To assess the relationship between a dependent variable and one
         independent variable.
@@ -369,11 +618,42 @@ class StatsMethods():
         Alternatives if assumptions aren't met:
         Data transformation
         Non-linear regression
-        :return:
+        :return: regression_results: Summary of the regression results
         '''
-        pass
 
-    def multiple_linear_regression(self):
+        # Input checks
+        if not isinstance(x, np.ndarray) or x.ndim != 1:
+            raise StatsMethodsError("x should be a 1D np.array.")
+        if not isinstance(y, np.ndarray) or y.ndim != 1:
+            raise StatsMethodsError("y should be a 1D np.array.")
+        if x.size != y.size:
+            raise StatsMethodsError("x and y should be of the same size.")
+        if np.isnan(x).any() or np.isnan(y).any():
+            raise StatsMethodsError("Neither x nor y should contain NaN values.")
+        if np.isinf(x).any() or np.isinf(y).any():
+            raise StatsMethodsError("Neither x nor y should contain Inf values.")
+
+        # Fitting the model
+        x = sm.add_constant(x)  # adding a constant
+        model = sm.OLS(y, x)
+        results = model.fit()
+
+        # Checking assumptions
+        residuals = results.resid
+        _, pval_homo = het_breuschpagan(residuals, x)
+        pval_normality = shapiro(residuals)[1]
+        dw_statistic = durbin_watson(residuals)
+
+        # Print assumption test results
+        print(f'Homoscedasticity test p-value: {pval_homo}')
+        print(f'Normality test p-value: {pval_normality}')
+        print(f'Durbin-Watson statistic: {dw_statistic}')
+
+        # Return the regression results
+        return results.summary()
+
+    @staticmethod
+    def multiple_linear_regression(X, y):
         '''
         Purpose: To assess the relationship between a dependent variable and several
         independent variables.
@@ -383,8 +663,59 @@ class StatsMethods():
         Alternatives if assumptions aren't met:
         Data transformation
         Non-linear regression
-        :return:
+        :return: regression_results: Summary of the regression results
         '''
+
+        # Input checks
+        if not isinstance(X, np.ndarray) or X.ndim != 2:
+            raise StatsMethodsError("X should be a 2D np.array.")
+        if not isinstance(y, np.ndarray) or y.ndim != 1:
+            raise StatsMethodsError("y should be a 1D np.array.")
+        if X.shape[0] != y.size:
+            raise StatsMethodsError("The number of rows in X and the size of y should match.")
+        if np.isnan(X).any() or np.isnan(y).any():
+            raise StatsMethodsError("Neither X nor y should contain NaN values.")
+        if np.isinf(X).any() or np.isinf(y).any():
+            raise StatsMethodsError("Neither X nor y should contain Inf values.")
+
+        # Fitting the model
+        X = sm.add_constant(X)  # adding a constant
+        model = sm.OLS(y, X)
+        results = model.fit()
+
+        # Checking assumptions
+        residuals = results.resid
+        _, pval_homo = het_breuschpagan(residuals, X)
+        pval_normality = shapiro(residuals)[1]
+        dw_statistic = durbin_watson(residuals)
+
+        # Print assumption test results
+        print(f'Homoscedasticity test p-value: {pval_homo}')
+        print(f'Normality test p-value: {pval_normality}')
+        print(f'Durbin-Watson statistic: {dw_statistic}')
+
+        # Return the regression results
+        return results.summary()
+
+    '''
+    Parametric Statistical tests
+    1. Population is well-known
+    2. Assumptions made about the population
+    3. Sample data based on distribution
+    4. Applicable for continuous variables
+    5. More powerful
+
+
+    a. Parametric statistics are more powerful for the same sample size than 
+    nonparametric statistics.
+    b. Parametric statistics use continuous variables, whereas nonparametric 
+    statistics often use discrete variables.
+    c. If you use parametric statistics when the data strongly diverts from 
+    the assumptions on which the parametric statistics are based, the result 
+    might lead to incorrect conclusions.
+
+    https://www.ibm.com/docs/en/db2woc?topic=functions-parametric-statistics
+    '''
 
     '''
     Nonparametric statistics
