@@ -21,7 +21,7 @@ class StatsMethods():
     '''
 
     @staticmethod
-    def is_continuous_array(array):
+    def is_continuous_array(cls, array):
         '''
         Heuristically determines if data in a numpy array is continuous.
         :param array: 1D np.array object.
