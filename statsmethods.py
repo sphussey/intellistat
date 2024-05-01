@@ -10,6 +10,15 @@ from scipy.stats import shapiro
 import statsmodels.api as sm
 import os
 import datetime
+import logging
+import sys
+
+
+# Set up logger
+logging.basicConfig(filename=os.path.join("logs", "logfile.log"), 
+                    level=logging.ERROR)
+
+
 
 class StatsMethodsError(Exception):
     pass
